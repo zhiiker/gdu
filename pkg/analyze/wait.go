@@ -19,7 +19,7 @@ func (s *WaitGroup) Init() *WaitGroup {
 // Add increments value
 func (s *WaitGroup) Add(value int) {
 	s.access.Lock()
-	s.value = s.value + value
+	s.value += value
 	s.access.Unlock()
 }
 
@@ -43,6 +43,7 @@ func (s *WaitGroup) Wait() {
 
 func (s *WaitGroup) check() {
 	if s.value == 0 {
+		s.wait.TryLock()
 		s.wait.Unlock()
 	}
 }

@@ -1,5 +1,5 @@
-//go:build freebsd || darwin
-// +build freebsd darwin
+//go:build netbsd || openbsd
+// +build netbsd openbsd
 
 package device
 
@@ -11,8 +11,6 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-
-	"golang.org/x/sys/unix"
 )
 
 // BSDDevicesInfoGetter returns info for Darwin devices
@@ -52,7 +50,7 @@ func readMountOutput(rdr io.Reader) (Devices, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		re := regexp.MustCompile("^(.*) on (/.*) \\(([^)]+)\\)$")
+		re := regexp.MustCompile("^(.*) on (/.*) type (.*) \\(([^)]+)\\)$")
 		parts := re.FindAllStringSubmatch(line, -1)
 
 		if len(parts) < 1 {
@@ -74,25 +72,4 @@ func readMountOutput(rdr io.Reader) (Devices, error) {
 	}
 
 	return mounts, nil
-}
-
-func processMounts(mounts Devices, ignoreErrors bool) (Devices, error) {
-	devices := Devices{}
-
-	for _, mount := range mounts {
-		if strings.HasPrefix(mount.Name, "/dev") || mount.Fstype == "zfs" {
-			info := &unix.Statfs_t{}
-			err := unix.Statfs(mount.MountPoint, info)
-			if err != nil && !ignoreErrors {
-				return nil, err
-			}
-
-			mount.Size = int64(info.Bsize) * int64(info.Blocks)
-			mount.Free = int64(info.Bsize) * int64(info.Bavail)
-
-			devices = append(devices, mount)
-		}
-	}
-
-	return devices, nil
 }

@@ -15,7 +15,8 @@ type ShouldDirBeIgnored func(name, path string) bool
 // Analyzer is type for dir analyzing function
 type Analyzer interface {
 	AnalyzeDir(path string, ignore ShouldDirBeIgnored, constGC bool) fs.Item
+	SetFollowSymlinks(bool)
 	GetProgressChan() chan CurrentProgress
-	GetDoneChan() chan struct{}
+	GetDone() SignalGroup
 	ResetProgress()
 }

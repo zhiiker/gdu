@@ -74,7 +74,7 @@ func TestExportToFile(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
 
-	reportOutput, err := os.OpenFile("output.json", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	reportOutput, err := os.OpenFile("output.json", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	assert.Nil(t, err)
 	defer func() {
 		os.Remove("output.json")
@@ -89,7 +89,7 @@ func TestExportToFile(t *testing.T) {
 	err = ui.StartUILoop()
 	assert.Nil(t, err)
 
-	reportOutput, err = os.OpenFile("output.json", os.O_RDONLY, 0644)
+	reportOutput, err = os.OpenFile("output.json", os.O_RDONLY, 0o644)
 	assert.Nil(t, err)
 	_, err = reportOutput.Seek(0, 0)
 	assert.Nil(t, err)
@@ -113,6 +113,7 @@ func TestFormatSize(t *testing.T) {
 	assert.Contains(t, ui.formatSize(1<<40+1), "TiB")
 	assert.Contains(t, ui.formatSize(1<<50+1), "PiB")
 	assert.Contains(t, ui.formatSize(1<<60+1), "EiB")
+	assert.Contains(t, ui.formatSize(-1<<10-1), "KiB")
 }
 
 func TestFormatSizeDec(t *testing.T) {
@@ -128,4 +129,5 @@ func TestFormatSizeDec(t *testing.T) {
 	assert.Contains(t, ui.formatSize(1<<40+1), "TB")
 	assert.Contains(t, ui.formatSize(1<<50+1), "PB")
 	assert.Contains(t, ui.formatSize(1<<60+1), "EB")
+	assert.Contains(t, ui.formatSize(-1<<10-1), "kB")
 }

@@ -1,14 +1,49 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/dundee/gdu/v5/build"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+	log "github.com/sirupsen/logrus"
+
+	"github.com/dundee/gdu/v5/build"
 )
 
+const helpText = `     [::b]up/down, k/j    [white:black:-]Move cursor up/down
+  [::b]pgup/pgdn, g/G     [white:black:-]Move cursor top/bottom
+ [::b]enter, right, l     [white:black:-]Go to directory/device
+         [::b]left, h     [white:black:-]Go to parent directory
+
+               [::b]r     [white:black:-]Rescan current directory
+               [::b]E     [white:black:-]Export analysis data to file as JSON
+               [::b]/     [white:black:-]Search items by name
+               [::b]a     [white:black:-]Toggle between showing disk usage and apparent size
+               [::b]B     [white:black:-]Toggle bar alignment to biggest file or directory
+               [::b]c     [white:black:-]Show/hide file count
+               [::b]m     [white:black:-]Show/hide latest mtime
+               [::b]b     [white:black:-]Spawn shell in current directory
+               [::b]q     [white:black:-]Quit gdu
+               [::b]Q     [white:black:-]Quit gdu and print current directory path
+
+Item under cursor:
+               [::b]d     [white:black:-]Delete file or directory
+               [::b]e     [white:black:-]Empty file or directory
+			   [::b]space [white:black:-]Mark file or directory for deletion
+			   [::b]I     [white:black:-]Ignore file or directory
+               [::b]v     [white:black:-]Show content of file
+               [::b]o     [white:black:-]Open file or directory in external program
+               [::b]i     [white:black:-]Show info about item
+
+Sort by (twice toggles asc/desc):
+               [::b]n     [white:black:-]Sort by name (asc/desc)
+               [::b]s     [white:black:-]Sort by size (asc/desc)
+               [::b]C     [white:black:-]Sort by file count (asc/desc)
+               [::b]M     [white:black:-]Sort by mtime (asc/desc)`
+
+// nolint: funlen // Why: complex function
 func (ui *UI) showDir() {
 	var (
 		totalUsage int64
@@ -19,6 +54,15 @@ func (ui *UI) showDir() {
 	)
 
 	ui.currentDirPath = ui.currentDir.GetPath()
+
+	if ui.changeCwdFn != nil {
+		err := ui.changeCwdFn(ui.currentDirPath)
+		if err != nil {
+			log.Printf("error setting cwd: %s", err.Error())
+		}
+		log.Printf("changing cwd to %s", ui.currentDirPath)
+	}
+
 	ui.currentDirLabel.SetText("[::b] --- " +
 		tview.Escape(
 			strings.TrimPrefix(ui.currentDirPath, build.RootPathPrefix),
@@ -29,7 +73,12 @@ func (ui *UI) showDir() {
 
 	rowIndex := 0
 	if ui.currentDirPath != ui.topDirPath {
-		cell := tview.NewTableCell("                         [::b]/..")
+		prefix := "                         "
+		if len(ui.markedRows) > 0 {
+			prefix += "  "
+		}
+
+		cell := tview.NewTableCell(prefix + "[::b]/..")
 		cell.SetReference(ui.currentDir.GetParent())
 		cell.SetStyle(tcell.Style{}.Foreground(tcell.ColorDefault))
 		ui.table.SetCell(0, 0, cell)
@@ -38,18 +87,30 @@ func (ui *UI) showDir() {
 
 	ui.sortItems()
 
-	if ui.ShowRelativeSize {
-		for _, item := range ui.currentDir.GetFiles() {
+	unlock := ui.currentDir.RLock()
+	defer unlock()
+
+	i := rowIndex
+	maxUsage = 0
+	maxSize = 0
+	for _, item := range ui.currentDir.GetFiles() {
+		if _, ignored := ui.ignoredRows[i]; ignored {
+			i++
+			continue
+		}
+
+		if ui.ShowRelativeSize {
 			if item.GetUsage() > maxUsage {
 				maxUsage = item.GetUsage()
 			}
 			if item.GetSize() > maxSize {
 				maxSize = item.GetSize()
 			}
+		} else {
+			maxSize += item.GetSize()
+			maxUsage += item.GetUsage()
 		}
-	} else {
-		maxUsage = ui.currentDir.GetUsage()
-		maxSize = ui.currentDir.GetSize()
+		i++
 	}
 
 	for i, item := range ui.currentDir.GetFiles() {
@@ -60,13 +121,27 @@ func (ui *UI) showDir() {
 			continue
 		}
 
-		totalUsage += item.GetUsage()
-		totalSize += item.GetSize()
-		itemCount += item.GetItemCount()
+		_, ignored := ui.ignoredRows[rowIndex]
 
-		cell := tview.NewTableCell(ui.formatFileRow(item, maxUsage, maxSize))
-		cell.SetStyle(tcell.Style{}.Foreground(tcell.ColorDefault))
+		if !ignored {
+			totalUsage += item.GetUsage()
+			totalSize += item.GetSize()
+			itemCount += item.GetItemCount()
+		}
+
+		_, marked := ui.markedRows[rowIndex]
+		cell := tview.NewTableCell(ui.formatFileRow(item, maxUsage, maxSize, marked, ignored))
 		cell.SetReference(ui.currentDir.GetFiles()[i])
+
+		switch {
+		case ignored:
+			cell.SetStyle(tcell.Style{}.Foreground(tview.Styles.SecondaryTextColor))
+		case marked:
+			cell.SetStyle(tcell.Style{}.Foreground(tview.Styles.PrimaryTextColor))
+			cell.SetBackgroundColor(tview.Styles.ContrastBackgroundColor)
+		default:
+			cell.SetStyle(tcell.Style{}.Foreground(tcell.ColorDefault))
+		}
 
 		ui.table.SetCell(rowIndex, 0, cell)
 		rowIndex++
@@ -74,15 +149,30 @@ func (ui *UI) showDir() {
 
 	var footerNumberColor, footerTextColor string
 	if ui.UseColors {
-		footerNumberColor = "[#ffffff:#2479d0:b]"
-		footerTextColor = "[black:#2479d0:-]"
+		footerNumberColor = fmt.Sprintf(
+			"[%s:%s:b]",
+			ui.footerNumberColor,
+			ui.footerBackgroundColor,
+		)
+		footerTextColor = fmt.Sprintf(
+			"[%s:%s:-]",
+			ui.footerTextColor,
+			ui.footerBackgroundColor,
+		)
 	} else {
 		footerNumberColor = "[black:white:b]"
-		footerTextColor = "[black:white:-]"
+		footerTextColor = blackOnWhite
+	}
+
+	selected := ""
+	if len(ui.markedRows) > 0 {
+		selected = " Selected items: " + footerNumberColor +
+			strconv.Itoa(len(ui.markedRows)) + footerTextColor
 	}
 
 	ui.footerLabel.SetText(
-		" Total disk usage: " +
+		selected + footerTextColor +
+			" Total disk usage: " +
 			footerNumberColor +
 			ui.formatSize(totalUsage, true, false) +
 			" Apparent size: " +
@@ -127,18 +217,26 @@ func (ui *UI) showDevices() {
 		ui.table.SetCell(i+1, 0, tview.NewTableCell(textColor+device.Name).SetReference(ui.devices[i]))
 		ui.table.SetCell(i+1, 1, tview.NewTableCell(ui.formatSize(device.Size, false, true)))
 		ui.table.SetCell(i+1, 2, tview.NewTableCell(sizeColor+ui.formatSize(device.Size-device.Free, false, true)))
-		ui.table.SetCell(i+1, 3, tview.NewTableCell(getDeviceUsagePart(device)))
+		ui.table.SetCell(i+1, 3, tview.NewTableCell(getDeviceUsagePart(device, ui.useOldSizeBar)))
 		ui.table.SetCell(i+1, 4, tview.NewTableCell(ui.formatSize(device.Free, false, true)))
-		ui.table.SetCell(i+1, 5, tview.NewTableCell(textColor+device.MountPoint))
+		ui.table.SetCell(i+1, 5, tview.NewTableCell(textColor+device.MountPoint).SetReference(ui.devices[i]))
 	}
 
 	var footerNumberColor, footerTextColor string
 	if ui.UseColors {
-		footerNumberColor = "[#ffffff:#2479d0:b]"
-		footerTextColor = "[black:#2479d0:-]"
+		footerNumberColor = fmt.Sprintf(
+			"[%s:%s:b]",
+			ui.footerNumberColor,
+			ui.footerBackgroundColor,
+		)
+		footerTextColor = fmt.Sprintf(
+			"[%s:%s:-]",
+			ui.footerTextColor,
+			ui.footerBackgroundColor,
+		)
 	} else {
 		footerNumberColor = "[black:white:b]"
-		footerTextColor = "[black:white:-]"
+		footerTextColor = blackOnWhite
 	}
 
 	ui.footerLabel.SetText(
@@ -174,6 +272,13 @@ func (ui *UI) showErr(msg string, err error) {
 	}
 
 	ui.pages.AddPage("error", modal, true, true)
+	ui.app.SetFocus(modal)
+}
+
+func (ui *UI) showErrFromGo(msg string, err error) {
+	ui.app.QueueUpdateDraw(func() {
+		ui.showErr(msg, err)
+	})
 }
 
 func (ui *UI) showHelp() {
@@ -183,19 +288,10 @@ func (ui *UI) showHelp() {
 	text.SetTitle(" gdu help ")
 	text.SetScrollable(true)
 
-	if ui.UseColors {
-		text.SetText(
-			strings.ReplaceAll(
-				strings.ReplaceAll(helpText, "[::b]", "[red]"),
-				"[white:black:-]",
-				"[white]",
-			),
-		)
-	} else {
-		text.SetText(helpText)
-	}
+	formattedHelpText := ui.formatHelpTextFor()
+	text.SetText(formattedHelpText)
 
-	maxHeight := strings.Count(helpText, "\n") + 7
+	maxHeight := strings.Count(formattedHelpText, "\n") + 7
 	_, height := ui.screen.Size()
 	if height > maxHeight {
 		height = maxHeight
@@ -212,4 +308,25 @@ func (ui *UI) showHelp() {
 	ui.help = flex
 	ui.pages.AddPage("help", flex, true, true)
 	ui.app.SetFocus(text)
+}
+
+func (ui *UI) formatHelpTextFor() string {
+	lines := strings.Split(helpText, "\n")
+
+	for i, line := range lines {
+		if ui.UseColors {
+			lines[i] = strings.ReplaceAll(
+				strings.ReplaceAll(line, defaultColorBold, "[red]"),
+				whiteOnBlack,
+				"[white]",
+			)
+		}
+
+		if ui.noDelete && (strings.Contains(line, "Empty file or directory") ||
+			strings.Contains(line, "Delete file or directory")) {
+			lines[i] += " (disabled)"
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }

@@ -28,7 +28,7 @@ func TestAnalyzeDir(t *testing.T) {
 	progress := <-analyzer.GetProgressChan()
 	assert.GreaterOrEqual(t, progress.TotalSize, int64(0))
 
-	<-analyzer.GetDoneChan()
+	analyzer.GetDone().Wait()
 	analyzer.ResetProgress()
 	dir.UpdateStats(make(fs.HardLinkedItems))
 
@@ -83,7 +83,7 @@ func TestFlags(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
 
-	err := os.Mkdir("test_dir/empty", 0644)
+	err := os.Mkdir("test_dir/empty", 0o644)
 	assert.Nil(t, err)
 
 	err = os.Symlink("test_dir/nested/file2", "test_dir/nested/file3")
@@ -93,10 +93,10 @@ func TestFlags(t *testing.T) {
 	dir := analyzer.AnalyzeDir(
 		"test_dir", func(_, _ string) bool { return false }, false,
 	).(*Dir)
-	<-analyzer.GetDoneChan()
+	analyzer.GetDone().Wait()
 	dir.UpdateStats(make(fs.HardLinkedItems))
 
-	sort.Sort(dir.Files)
+	sort.Sort(sort.Reverse(dir.Files))
 
 	assert.Equal(t, int64(28+4096*4), dir.Size)
 	assert.Equal(t, 7, dir.ItemCount)
@@ -121,7 +121,7 @@ func TestHardlink(t *testing.T) {
 	dir := analyzer.AnalyzeDir(
 		"test_dir", func(_, _ string) bool { return false }, false,
 	).(*Dir)
-	<-analyzer.GetDoneChan()
+	analyzer.GetDone().Wait()
 	dir.UpdateStats(make(fs.HardLinkedItems))
 
 	assert.Equal(t, int64(7+4096*3), dir.Size) // file2 and file3 are counted just once for size
@@ -133,29 +133,61 @@ func TestHardlink(t *testing.T) {
 	assert.Equal(t, 'H', dir.Files[0].(*Dir).Files[1].GetFlag())
 }
 
-func TestErr(t *testing.T) {
+func TestFollowSymlink(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
 
-	err := os.Chmod("test_dir/nested", 0)
+	err := os.Mkdir("test_dir/empty", 0o644)
 	assert.Nil(t, err)
-	defer func() {
-		err = os.Chmod("test_dir/nested", 0755)
-		assert.Nil(t, err)
-	}()
+
+	err = os.Symlink("./file2", "test_dir/nested/file3")
+	assert.Nil(t, err)
 
 	analyzer := CreateAnalyzer()
+	analyzer.SetFollowSymlinks(true)
 	dir := analyzer.AnalyzeDir(
 		"test_dir", func(_, _ string) bool { return false }, false,
 	).(*Dir)
-	<-analyzer.GetDoneChan()
+	analyzer.GetDone().Wait()
 	dir.UpdateStats(make(fs.HardLinkedItems))
 
-	assert.Equal(t, "test_dir", dir.GetName())
-	assert.Equal(t, 2, dir.ItemCount)
-	assert.Equal(t, '.', dir.GetFlag())
+	sort.Sort(sort.Reverse(dir.Files))
 
+	assert.Equal(t, int64(9+4096*4), dir.Size)
+	assert.Equal(t, 7, dir.ItemCount)
+
+	// test file3
 	assert.Equal(t, "nested", dir.Files[0].GetName())
+	assert.Equal(t, "file3", dir.Files[0].(*Dir).Files[1].GetName())
+	assert.Equal(t, int64(2), dir.Files[0].(*Dir).Files[1].GetSize())
+	assert.Equal(t, ' ', dir.Files[0].(*Dir).Files[1].GetFlag())
+
+	assert.Equal(t, 'e', dir.Files[1].GetFlag())
+}
+
+func TestBrokenSymlinkSkipped(t *testing.T) {
+	fin := testdir.CreateTestDir()
+	defer fin()
+
+	err := os.Mkdir("test_dir/empty", 0o644)
+	assert.Nil(t, err)
+
+	err = os.Symlink("xxx", "test_dir/nested/file3")
+	assert.Nil(t, err)
+
+	analyzer := CreateAnalyzer()
+	analyzer.SetFollowSymlinks(true)
+	dir := analyzer.AnalyzeDir(
+		"test_dir", func(_, _ string) bool { return false }, false,
+	).(*Dir)
+	analyzer.GetDone().Wait()
+	dir.UpdateStats(make(fs.HardLinkedItems))
+
+	sort.Sort(sort.Reverse(dir.Files))
+
+	assert.Equal(t, int64(7+4096*4), dir.Size)
+	assert.Equal(t, 6, dir.ItemCount)
+
 	assert.Equal(t, '!', dir.Files[0].GetFlag())
 }
 
@@ -169,6 +201,6 @@ func BenchmarkAnalyzeDir(b *testing.B) {
 	dir := analyzer.AnalyzeDir(
 		"test_dir", func(_, _ string) bool { return false }, false,
 	)
-	<-analyzer.GetDoneChan()
+	analyzer.GetDone().Wait()
 	dir.UpdateStats(make(fs.HardLinkedItems))
 }

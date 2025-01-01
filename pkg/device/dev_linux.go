@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// LinuxDevicesInfoGetter retruns info for Linux devices
+// LinuxDevicesInfoGetter returns info for Linux devices
 type LinuxDevicesInfoGetter struct {
 	MountsPath string
 }
@@ -28,7 +28,7 @@ func (t LinuxDevicesInfoGetter) GetMounts() (Devices, error) {
 	devices, err := readMountsFile(file)
 	if err != nil {
 		if cerr := file.Close(); cerr != nil {
-			return nil, fmt.Errorf("%w; %s", err, cerr)
+			return nil, fmt.Errorf("%w; %s", err, cerr.Error())
 		}
 		return nil, err
 	}
