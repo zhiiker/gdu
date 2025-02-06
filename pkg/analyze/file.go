@@ -1,8 +1,8 @@
 package analyze
 
 import (
-	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/dundee/gdu/v5/pkg/fs"
@@ -29,7 +29,7 @@ func (f *File) IsDir() bool {
 	return false
 }
 
-// GetParent retruns parent dir
+// GetParent returns parent dir
 func (f *File) GetParent() fs.Item {
 	return f.Parent
 }
@@ -39,7 +39,7 @@ func (f *File) SetParent(parent fs.Item) {
 	f.Parent = parent
 }
 
-// GetPath retruns absolute Get of the file
+// GetPath returns absolute Get of the file
 func (f *File) GetPath() string {
 	return filepath.Join(f.Parent.GetPath(), f.Name)
 }
@@ -66,8 +66,7 @@ func (f *File) GetMtime() time.Time {
 
 // GetType returns name type of item
 func (f *File) GetType() string {
-	switch f.Flag {
-	case '@':
+	if f.Flag == '@' {
 		return "Other"
 	}
 	return "File"
@@ -87,8 +86,8 @@ func (f *File) alreadyCounted(linkedItems fs.HardLinkedItems) bool {
 	mli := f.Mli
 	counted := false
 	if mli > 0 {
+		f.Flag = 'H'
 		if _, ok := linkedItems[mli]; ok {
-			f.Flag = 'H'
 			counted = true
 		}
 		linkedItems[mli] = append(linkedItems[mli], f)
@@ -97,7 +96,7 @@ func (f *File) alreadyCounted(linkedItems fs.HardLinkedItems) bool {
 }
 
 // GetItemStats returns 1 as count of items, apparent usage and real usage of this file
-func (f *File) GetItemStats(linkedItems fs.HardLinkedItems) (int, int64, int64) {
+func (f *File) GetItemStats(linkedItems fs.HardLinkedItems) (itemCount int, size, usage int64) {
 	if f.alreadyCounted(linkedItems) {
 		return 1, 0, 0
 	}
@@ -112,6 +111,16 @@ func (f *File) GetFiles() fs.Files {
 	return fs.Files{}
 }
 
+// GetFilesLocked returns all files in directory
+func (f *File) GetFilesLocked() fs.Files {
+	return f.GetFiles()
+}
+
+// RLock panics on file
+func (f *File) RLock() func() {
+	panic("SetFiles should not be called on file")
+}
+
 // SetFiles panics on file
 func (f *File) SetFiles(files fs.Files) {
 	panic("SetFiles should not be called on file")
@@ -122,15 +131,21 @@ func (f *File) AddFile(item fs.Item) {
 	panic("AddFile should not be called on file")
 }
 
+// RemoveFile panics on file
+func (f *File) RemoveFile(item fs.Item) {
+	panic("RemoveFile should not be called on file")
+}
+
 // Dir struct
 type Dir struct {
 	*File
 	BasePath  string
 	Files     fs.Files
 	ItemCount int
+	m         sync.RWMutex
 }
 
-// AddFile add item fo files
+// AddFile add item to files
 func (f *Dir) AddFile(item fs.Item) {
 	f.Files = append(f.Files, item)
 }
@@ -138,6 +153,14 @@ func (f *Dir) AddFile(item fs.Item) {
 // GetFiles returns all files in directory
 func (f *Dir) GetFiles() fs.Files {
 	return f.Files
+}
+
+// GetFilesLocked returns all files in directory
+// It is safe to call this function from multiple goroutines
+func (f *Dir) GetFilesLocked() fs.Files {
+	f.m.RLock()
+	defer f.m.RUnlock()
+	return f.GetFiles()[:]
 }
 
 // SetFiles sets files in directory
@@ -152,6 +175,8 @@ func (f *Dir) GetType() string {
 
 // GetItemCount returns number of files in dir
 func (f *Dir) GetItemCount() int {
+	f.m.RLock()
+	defer f.m.RUnlock()
 	return f.ItemCount
 }
 
@@ -160,7 +185,7 @@ func (f *Dir) IsDir() bool {
 	return true
 }
 
-// GetPath retruns absolute path of the file
+// GetPath returns absolute path of the file
 func (f *Dir) GetPath() string {
 	if f.BasePath != "" {
 		return filepath.Join(f.BasePath, f.Name)
@@ -172,7 +197,7 @@ func (f *Dir) GetPath() string {
 }
 
 // GetItemStats returns item count, apparent usage and real usage of this dir
-func (f *Dir) GetItemStats(linkedItems fs.HardLinkedItems) (int, int64, int64) {
+func (f *Dir) GetItemStats(linkedItems fs.HardLinkedItems) (itemCount int, size, usage int64) {
 	f.UpdateStats(linkedItems)
 	return f.ItemCount, f.GetSize(), f.GetUsage()
 }
@@ -182,7 +207,7 @@ func (f *Dir) UpdateStats(linkedItems fs.HardLinkedItems) {
 	totalSize := int64(4096)
 	totalUsage := int64(4096)
 	var itemCount int
-	for _, entry := range f.Files {
+	for _, entry := range f.GetFiles() {
 		count, size, usage := entry.GetItemStats(linkedItems)
 		totalSize += size
 		totalUsage += usage
@@ -204,16 +229,14 @@ func (f *Dir) UpdateStats(linkedItems fs.HardLinkedItems) {
 	f.Usage = totalUsage
 }
 
-// RemoveItemFromDir removes item from dir
-func RemoveItemFromDir(dir fs.Item, item fs.Item) error {
-	err := os.RemoveAll(item.GetPath())
-	if err != nil {
-		return err
-	}
+// RemoveFile removes item from dir, updates size and item count
+func (f *Dir) RemoveFile(item fs.Item) {
+	f.m.Lock()
+	defer f.m.Unlock()
 
-	dir.SetFiles(dir.GetFiles().Remove(item))
+	f.SetFiles(f.GetFiles().Remove(item))
 
-	cur := dir.(*Dir)
+	cur := f
 	for {
 		cur.ItemCount -= item.GetItemCount()
 		cur.Size -= item.GetSize()
@@ -224,35 +247,10 @@ func RemoveItemFromDir(dir fs.Item, item fs.Item) error {
 		}
 		cur = cur.Parent.(*Dir)
 	}
-	return nil
 }
 
-// EmptyFileFromDir empty file from dir
-func EmptyFileFromDir(dir fs.Item, file fs.Item) error {
-	err := os.Truncate(file.GetPath(), 0)
-	if err != nil {
-		return err
-	}
-
-	cur := dir.(*Dir)
-	for {
-		cur.Size -= file.GetSize()
-		cur.Usage -= file.GetUsage()
-
-		if cur.Parent == nil {
-			break
-		}
-		cur = cur.Parent.(*Dir)
-	}
-
-	dir.SetFiles(dir.GetFiles().Remove(file))
-	newFile := &File{
-		Name:   file.GetName(),
-		Flag:   file.GetFlag(),
-		Size:   0,
-		Parent: dir,
-	}
-	dir.AddFile(newFile)
-
-	return nil
+// RLock read locks dir
+func (f *Dir) RLock() func() {
+	f.m.RLock()
+	return f.m.RUnlock
 }

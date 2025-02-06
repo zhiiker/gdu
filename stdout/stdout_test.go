@@ -25,7 +25,7 @@ func TestAnalyzePath(t *testing.T) {
 	buff := make([]byte, 10)
 	output := bytes.NewBuffer(buff)
 
-	ui := CreateStdoutUI(output, false, false, false, false, false, true, false)
+	ui := CreateStdoutUI(output, false, false, false, false, false, true, false, false, 0)
 	ui.SetIgnoreDirPaths([]string{"/xxx"})
 	err := ui.AnalyzePath("test_dir", nil)
 	assert.Nil(t, err)
@@ -42,7 +42,7 @@ func TestShowSummary(t *testing.T) {
 	buff := make([]byte, 10)
 	output := bytes.NewBuffer(buff)
 
-	ui := CreateStdoutUI(output, true, false, true, false, true, false, false)
+	ui := CreateStdoutUI(output, true, false, true, false, true, false, false, false, 0)
 	ui.SetIgnoreDirPaths([]string{"/xxx"})
 	err := ui.AnalyzePath("test_dir", nil)
 	assert.Nil(t, err)
@@ -59,7 +59,7 @@ func TestShowSummaryBw(t *testing.T) {
 	buff := make([]byte, 10)
 	output := bytes.NewBuffer(buff)
 
-	ui := CreateStdoutUI(output, false, false, false, false, true, false, false)
+	ui := CreateStdoutUI(output, false, false, false, false, true, false, false, false, 0)
 	ui.SetIgnoreDirPaths([]string{"/xxx"})
 	err := ui.AnalyzePath("test_dir", nil)
 	assert.Nil(t, err)
@@ -69,6 +69,42 @@ func TestShowSummaryBw(t *testing.T) {
 	assert.Contains(t, output.String(), "test_dir")
 }
 
+func TestShowTop(t *testing.T) {
+	fin := testdir.CreateTestDir()
+	defer fin()
+
+	buff := make([]byte, 10)
+	output := bytes.NewBuffer(buff)
+
+	ui := CreateStdoutUI(output, true, false, true, false, true, false, false, false, 2)
+	ui.SetIgnoreDirPaths([]string{"/xxx"})
+	err := ui.AnalyzePath("test_dir", nil)
+	assert.Nil(t, err)
+	err = ui.StartUILoop()
+
+	assert.Nil(t, err)
+	assert.Contains(t, output.String(), "test_dir/nested/subnested/file")
+	assert.Contains(t, output.String(), "test_dir/nested/file2")
+}
+
+func TestShowTopBw(t *testing.T) {
+	fin := testdir.CreateTestDir()
+	defer fin()
+
+	buff := make([]byte, 10)
+	output := bytes.NewBuffer(buff)
+
+	ui := CreateStdoutUI(output, false, false, false, false, true, false, false, false, 2)
+	ui.SetIgnoreDirPaths([]string{"/xxx"})
+	err := ui.AnalyzePath("test_dir", nil)
+	assert.Nil(t, err)
+	err = ui.StartUILoop()
+
+	assert.Nil(t, err)
+	assert.Contains(t, output.String(), "test_dir/nested/subnested/file")
+	assert.Contains(t, output.String(), "test_dir/nested/file2")
+}
+
 func TestAnalyzeSubdir(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
@@ -76,7 +112,7 @@ func TestAnalyzeSubdir(t *testing.T) {
 	buff := make([]byte, 10)
 	output := bytes.NewBuffer(buff)
 
-	ui := CreateStdoutUI(output, false, false, false, false, false, false, false)
+	ui := CreateStdoutUI(output, false, false, false, false, false, false, false, false, 0)
 	ui.SetIgnoreDirPaths([]string{"/xxx"})
 	err := ui.AnalyzePath("test_dir/nested", nil)
 	assert.Nil(t, err)
@@ -93,8 +129,23 @@ func TestAnalyzePathWithColors(t *testing.T) {
 	buff := make([]byte, 10)
 	output := bytes.NewBuffer(buff)
 
-	ui := CreateStdoutUI(output, true, false, true, false, false, false, false)
+	ui := CreateStdoutUI(output, true, false, true, false, false, false, false, false, 0)
 	ui.SetIgnoreDirPaths([]string{"/xxx"})
+	err := ui.AnalyzePath("test_dir/nested", nil)
+
+	assert.Nil(t, err)
+	assert.Contains(t, output.String(), "subnested")
+}
+
+func TestAnalyzePathWoUnicode(t *testing.T) {
+	fin := testdir.CreateTestDir()
+	defer fin()
+
+	buff := make([]byte, 10)
+	output := bytes.NewBuffer(buff)
+
+	ui := CreateStdoutUI(output, false, true, true, false, false, false, false, false, 0)
+	ui.UseOldProgressRunes()
 	err := ui.AnalyzePath("test_dir/nested", nil)
 
 	assert.Nil(t, err)
@@ -104,7 +155,7 @@ func TestAnalyzePathWithColors(t *testing.T) {
 func TestItemRows(t *testing.T) {
 	output := bytes.NewBuffer(make([]byte, 10))
 
-	ui := CreateStdoutUI(output, false, true, false, false, false, false, false)
+	ui := CreateStdoutUI(output, false, true, false, false, false, false, false, false, 0)
 	ui.Analyzer = &testanalyze.MockedAnalyzer{}
 	err := ui.AnalyzePath("test_dir", nil)
 
@@ -118,7 +169,7 @@ func TestAnalyzePathWithProgress(t *testing.T) {
 
 	output := bytes.NewBuffer(make([]byte, 10))
 
-	ui := CreateStdoutUI(output, false, true, true, false, false, false, false)
+	ui := CreateStdoutUI(output, false, true, true, false, false, false, false, false, 0)
 	ui.SetIgnoreDirPaths([]string{"/xxx"})
 	err := ui.AnalyzePath("test_dir", nil)
 
@@ -129,7 +180,7 @@ func TestAnalyzePathWithProgress(t *testing.T) {
 func TestShowDevices(t *testing.T) {
 	output := bytes.NewBuffer(make([]byte, 10))
 
-	ui := CreateStdoutUI(output, false, true, false, false, false, false, false)
+	ui := CreateStdoutUI(output, false, true, false, false, false, false, false, false, 0)
 	err := ui.ListDevices(getDevicesInfoMock())
 
 	assert.Nil(t, err)
@@ -140,7 +191,7 @@ func TestShowDevices(t *testing.T) {
 func TestShowDevicesWithColor(t *testing.T) {
 	output := bytes.NewBuffer(make([]byte, 10))
 
-	ui := CreateStdoutUI(output, true, true, true, false, false, false, false)
+	ui := CreateStdoutUI(output, true, true, true, false, false, false, false, false, 0)
 	err := ui.ListDevices(getDevicesInfoMock())
 
 	assert.Nil(t, err)
@@ -149,12 +200,12 @@ func TestShowDevicesWithColor(t *testing.T) {
 }
 
 func TestReadAnalysisWithColor(t *testing.T) {
-	input, err := os.OpenFile("../internal/testdata/test.json", os.O_RDONLY, 0644)
+	input, err := os.OpenFile("../internal/testdata/test.json", os.O_RDONLY, 0o644)
 	assert.Nil(t, err)
 
 	output := bytes.NewBuffer(make([]byte, 10))
 
-	ui := CreateStdoutUI(output, true, true, true, false, false, false, false)
+	ui := CreateStdoutUI(output, true, true, true, false, false, false, false, false, 0)
 	err = ui.ReadAnalysis(input)
 
 	assert.Nil(t, err)
@@ -162,12 +213,12 @@ func TestReadAnalysisWithColor(t *testing.T) {
 }
 
 func TestReadAnalysisBw(t *testing.T) {
-	input, err := os.OpenFile("../internal/testdata/test.json", os.O_RDONLY, 0644)
+	input, err := os.OpenFile("../internal/testdata/test.json", os.O_RDONLY, 0o644)
 	assert.Nil(t, err)
 
 	output := bytes.NewBuffer(make([]byte, 10))
 
-	ui := CreateStdoutUI(output, false, false, false, false, false, false, false)
+	ui := CreateStdoutUI(output, false, false, false, false, false, false, false, false, 0)
 	err = ui.ReadAnalysis(input)
 
 	assert.Nil(t, err)
@@ -175,15 +226,28 @@ func TestReadAnalysisBw(t *testing.T) {
 }
 
 func TestReadAnalysisWithWrongFile(t *testing.T) {
-	input, err := os.OpenFile("../internal/testdata/wrong.json", os.O_RDONLY, 0644)
+	input, err := os.OpenFile("../internal/testdata/wrong.json", os.O_RDONLY, 0o644)
 	assert.Nil(t, err)
 
 	output := bytes.NewBuffer(make([]byte, 10))
 
-	ui := CreateStdoutUI(output, true, true, true, false, false, false, false)
+	ui := CreateStdoutUI(output, true, true, true, false, false, false, false, false, 0)
 	err = ui.ReadAnalysis(input)
 
 	assert.NotNil(t, err)
+}
+
+func TestReadAnalysisWithSummarize(t *testing.T) {
+	input, err := os.OpenFile("../internal/testdata/test.json", os.O_RDONLY, 0o644)
+	assert.Nil(t, err)
+
+	output := bytes.NewBuffer(make([]byte, 10))
+
+	ui := CreateStdoutUI(output, false, false, false, false, true, false, false, false, 0)
+	err = ui.ReadAnalysis(input)
+
+	assert.Nil(t, err)
+	assert.Contains(t, output.String(), " gdu\n")
 }
 
 func TestMaxInt(t *testing.T) {
@@ -194,7 +258,7 @@ func TestMaxInt(t *testing.T) {
 func TestFormatSize(t *testing.T) {
 	output := bytes.NewBuffer(make([]byte, 10))
 
-	ui := CreateStdoutUI(output, true, true, true, false, false, false, false)
+	ui := CreateStdoutUI(output, true, true, true, false, false, false, false, false, 0)
 
 	assert.Contains(t, ui.formatSize(1), "B")
 	assert.Contains(t, ui.formatSize(1<<10+1), "KiB")
@@ -208,7 +272,7 @@ func TestFormatSize(t *testing.T) {
 func TestFormatSizeDec(t *testing.T) {
 	output := bytes.NewBuffer(make([]byte, 10))
 
-	ui := CreateStdoutUI(output, true, true, true, false, false, false, true)
+	ui := CreateStdoutUI(output, true, true, true, false, false, false, true, false, 0)
 
 	assert.Contains(t, ui.formatSize(1), "B")
 	assert.Contains(t, ui.formatSize(1<<10+1), "kB")
@@ -217,6 +281,20 @@ func TestFormatSizeDec(t *testing.T) {
 	assert.Contains(t, ui.formatSize(1<<40+1), "TB")
 	assert.Contains(t, ui.formatSize(1<<50+1), "PB")
 	assert.Contains(t, ui.formatSize(1<<60+1), "EB")
+}
+
+func TestFormatSizeRaw(t *testing.T) {
+	output := bytes.NewBuffer(make([]byte, 10))
+
+	ui := CreateStdoutUI(output, true, true, true, false, false, false, true, true, 0)
+
+	assert.Equal(t, ui.formatSize(1), "1")
+	assert.Equal(t, ui.formatSize(1<<10+1), "1025")
+	assert.Equal(t, ui.formatSize(1<<20+1), "1048577")
+	assert.Equal(t, ui.formatSize(1<<30+1), "1073741825")
+	assert.Equal(t, ui.formatSize(1<<40+1), "1099511627777")
+	assert.Equal(t, ui.formatSize(1<<50+1), "1125899906842625")
+	assert.Equal(t, ui.formatSize(1<<60+1), "1152921504606846977")
 }
 
 // func printBuffer(buff *bytes.Buffer) {

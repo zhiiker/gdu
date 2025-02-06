@@ -17,7 +17,7 @@ import (
 )
 
 func TestShowHelp(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
@@ -29,7 +29,7 @@ func TestShowHelp(t *testing.T) {
 }
 
 func TestCloseHelp(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
@@ -44,7 +44,7 @@ func TestCloseHelp(t *testing.T) {
 }
 
 func TestCloseHelpWithQuestionMark(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
@@ -59,7 +59,7 @@ func TestCloseHelpWithQuestionMark(t *testing.T) {
 }
 
 func TestKeyWhileDeleting(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
@@ -73,7 +73,7 @@ func TestKeyWhileDeleting(t *testing.T) {
 }
 
 func TestLeftRightKeyWhileConfirm(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
@@ -82,16 +82,20 @@ func TestLeftRightKeyWhileConfirm(t *testing.T) {
 	modal := tview.NewModal().SetText("Really?")
 	ui.pages.AddPage("confirm", modal, true, true)
 
-	key := ui.keyPressed(tcell.NewEventKey(tcell.KeyLeft, 'h', 0))
+	key := ui.keyPressed(tcell.NewEventKey(tcell.KeyLeft, 0, 0))
 	assert.Equal(t, tcell.KeyLeft, key.Key())
-	key = ui.keyPressed(tcell.NewEventKey(tcell.KeyRight, 'l', 0))
+	key = ui.keyPressed(tcell.NewEventKey(tcell.KeyRight, 0, 0))
+	assert.Equal(t, tcell.KeyRight, key.Key())
+	key = ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'h', 0))
+	assert.Equal(t, tcell.KeyLeft, key.Key())
+	key = ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'l', 0))
 	assert.Equal(t, tcell.KeyRight, key.Key())
 }
 
 func TestMoveLeftRight(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
@@ -137,7 +141,7 @@ func TestMoveLeftRight(t *testing.T) {
 func TestMoveRightOnDevice(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
@@ -168,7 +172,7 @@ func TestMoveRightOnDevice(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
@@ -181,7 +185,7 @@ func TestStop(t *testing.T) {
 func TestStopWithPrintingPath(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
@@ -207,13 +211,13 @@ func TestStopWithPrintingPath(t *testing.T) {
 func TestSpawnShell(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
 	buff := &bytes.Buffer{}
 	ui := CreateUI(app, simScreen, buff, true, true, false, false, false)
-	var called = false
+	called := false
 	ui.exec = func(argv0 string, argv, envv []string) error {
 		called = true
 		return nil
@@ -237,13 +241,13 @@ func TestSpawnShell(t *testing.T) {
 func TestSpawnShellWithoutDir(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
 	buff := &bytes.Buffer{}
 	ui := CreateUI(app, simScreen, buff, true, true, false, false, false)
-	var called = false
+	called := false
 	ui.exec = func(argv0 string, argv, envv []string) error {
 		called = true
 		return nil
@@ -259,13 +263,13 @@ func TestSpawnShellWithoutDir(t *testing.T) {
 func TestSpawnShellWithWrongDir(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
 	buff := &bytes.Buffer{}
 	ui := CreateUI(app, simScreen, buff, true, true, false, false, false)
-	var called = false
+	called := false
 	ui.exec = func(argv0 string, argv, envv []string) error {
 		called = true
 		return nil
@@ -284,13 +288,13 @@ func TestSpawnShellWithWrongDir(t *testing.T) {
 func TestSpawnShellWithError(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
 	buff := &bytes.Buffer{}
 	ui := CreateUI(app, simScreen, buff, true, true, false, false, false)
-	var called = false
+	called := false
 	ui.exec = func(argv0 string, argv, envv []string) error {
 		called = true
 		return errors.New("wrong shell")
@@ -307,7 +311,7 @@ func TestSpawnShellWithError(t *testing.T) {
 }
 
 func TestShowConfirm(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -330,10 +334,14 @@ func TestShowConfirm(t *testing.T) {
 	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'd', 0))
 
 	assert.True(t, ui.pages.HasPage("confirm"))
+
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, '?', 0))
+
+	assert.False(t, ui.pages.HasPage("help"))
 }
 
 func TestDeleteEmpty(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -344,10 +352,34 @@ func TestDeleteEmpty(t *testing.T) {
 	assert.NotNil(t, key)
 }
 
+func TestMarkEmpty(t *testing.T) {
+	simScreen := testapp.CreateSimScreen()
+	defer simScreen.Fini()
+
+	app := testapp.CreateMockedApp(true)
+	ui := CreateUI(app, simScreen, &bytes.Buffer{}, false, true, false, false, false)
+	ui.done = make(chan struct{})
+
+	key := ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, ' ', 0))
+	assert.NotNil(t, key)
+}
+
+func TestIgnoreEmpty(t *testing.T) {
+	simScreen := testapp.CreateSimScreen()
+	defer simScreen.Fini()
+
+	app := testapp.CreateMockedApp(true)
+	ui := CreateUI(app, simScreen, &bytes.Buffer{}, false, true, false, false, false)
+	ui.done = make(chan struct{})
+
+	key := ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'I', 0))
+	assert.NotNil(t, key)
+}
+
 func TestDelete(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -380,10 +412,78 @@ func TestDelete(t *testing.T) {
 	assert.NoDirExists(t, "test_dir/nested")
 }
 
+func TestDeleteWithNoDelete(t *testing.T) {
+	fin := testdir.CreateTestDir()
+	defer fin()
+	simScreen := testapp.CreateSimScreen()
+	defer simScreen.Fini()
+
+	app := testapp.CreateMockedApp(true)
+	ui := CreateUI(app, simScreen, &bytes.Buffer{}, false, true, false, false, false)
+	ui.done = make(chan struct{})
+	err := ui.AnalyzePath("test_dir", nil)
+	assert.Nil(t, err)
+
+	<-ui.done // wait for analyzer
+
+	for _, f := range ui.app.(*testapp.MockedApp).GetUpdateDraws() {
+		f()
+	}
+
+	assert.Equal(t, "test_dir", ui.currentDir.GetName())
+
+	assert.Equal(t, 1, ui.table.GetRowCount())
+
+	ui.table.Select(0, 0)
+
+	ui.SetNoDelete()
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'd', 0))
+
+	assert.DirExists(t, "test_dir/nested")
+}
+
+func TestDeleteMarked(t *testing.T) {
+	fin := testdir.CreateTestDir()
+	defer fin()
+	simScreen := testapp.CreateSimScreen()
+	defer simScreen.Fini()
+
+	app := testapp.CreateMockedApp(true)
+	ui := CreateUI(app, simScreen, &bytes.Buffer{}, false, true, false, false, false)
+	ui.done = make(chan struct{})
+	ui.askBeforeDelete = false
+	err := ui.AnalyzePath("test_dir", nil)
+	assert.Nil(t, err)
+
+	<-ui.done // wait for analyzer
+
+	for _, f := range ui.app.(*testapp.MockedApp).GetUpdateDraws() {
+		f()
+	}
+
+	assert.Equal(t, "test_dir", ui.currentDir.GetName())
+
+	assert.Equal(t, 1, ui.table.GetRowCount())
+
+	ui.table.Select(0, 0)
+
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, ' ', 0))
+
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'd', 0))
+
+	<-ui.done
+
+	for _, f := range ui.app.(*testapp.MockedApp).GetUpdateDraws() {
+		f()
+	}
+
+	assert.NoDirExists(t, "test_dir/nested")
+}
+
 func TestDeleteParent(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -410,10 +510,70 @@ func TestDeleteParent(t *testing.T) {
 	assert.DirExists(t, "test_dir/nested")
 }
 
+func TestMarkParent(t *testing.T) {
+	fin := testdir.CreateTestDir()
+	defer fin()
+	simScreen := testapp.CreateSimScreen()
+	defer simScreen.Fini()
+
+	app := testapp.CreateMockedApp(true)
+	ui := CreateUI(app, simScreen, &bytes.Buffer{}, false, true, false, false, false)
+	ui.done = make(chan struct{})
+	ui.askBeforeDelete = false
+	err := ui.AnalyzePath("test_dir", nil)
+	assert.Nil(t, err)
+
+	<-ui.done // wait for analyzer
+
+	for _, f := range ui.app.(*testapp.MockedApp).GetUpdateDraws() {
+		f()
+	}
+
+	assert.Equal(t, "test_dir", ui.currentDir.GetName())
+	assert.Equal(t, 1, ui.table.GetRowCount())
+
+	ui.table.Select(0, 0)
+
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRight, 'l', 0))
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, ' ', 0))
+
+	assert.Equal(t, len(ui.markedRows), 0)
+}
+
+func TestIgnoreParent(t *testing.T) {
+	fin := testdir.CreateTestDir()
+	defer fin()
+	simScreen := testapp.CreateSimScreen()
+	defer simScreen.Fini()
+
+	app := testapp.CreateMockedApp(true)
+	ui := CreateUI(app, simScreen, &bytes.Buffer{}, false, true, false, false, false)
+	ui.done = make(chan struct{})
+	ui.askBeforeDelete = false
+	err := ui.AnalyzePath("test_dir", nil)
+	assert.Nil(t, err)
+
+	<-ui.done // wait for analyzer
+
+	for _, f := range ui.app.(*testapp.MockedApp).GetUpdateDraws() {
+		f()
+	}
+
+	assert.Equal(t, "test_dir", ui.currentDir.GetName())
+	assert.Equal(t, 1, ui.table.GetRowCount())
+
+	ui.table.Select(0, 0)
+
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRight, 'l', 0))
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'I', 0))
+
+	assert.Equal(t, len(ui.ignoredRows), 0)
+}
+
 func TestEmptyDir(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -447,10 +607,88 @@ func TestEmptyDir(t *testing.T) {
 	assert.NoDirExists(t, "test_dir/nested/subnested")
 }
 
+func TestMarkedEmptyDir(t *testing.T) {
+	fin := testdir.CreateTestDir()
+	defer fin()
+	simScreen := testapp.CreateSimScreen()
+	defer simScreen.Fini()
+
+	app := testapp.CreateMockedApp(true)
+	ui := CreateUI(app, simScreen, &bytes.Buffer{}, false, true, false, false, false)
+	ui.done = make(chan struct{})
+	ui.askBeforeDelete = false
+	err := ui.AnalyzePath("test_dir", nil)
+	assert.Nil(t, err)
+
+	<-ui.done // wait for analyzer
+
+	for _, f := range ui.app.(*testapp.MockedApp).GetUpdateDraws() {
+		f()
+	}
+
+	assert.Equal(t, "test_dir", ui.currentDir.GetName())
+
+	assert.Equal(t, 1, ui.table.GetRowCount())
+
+	ui.table.Select(0, 0)
+
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, ' ', 0))
+
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'e', 0))
+
+	<-ui.done
+
+	for _, f := range ui.app.(*testapp.MockedApp).GetUpdateDraws() {
+		f()
+	}
+
+	assert.DirExists(t, "test_dir/nested")
+	assert.NoDirExists(t, "test_dir/nested/subnested")
+}
+
+func TestIgnoreDir(t *testing.T) {
+	fin := testdir.CreateTestDir()
+	defer fin()
+	simScreen := testapp.CreateSimScreen()
+	defer simScreen.Fini()
+
+	app := testapp.CreateMockedApp(true)
+	ui := CreateUI(app, simScreen, &bytes.Buffer{}, false, true, false, false, false)
+	ui.done = make(chan struct{})
+	ui.askBeforeDelete = false
+	err := ui.AnalyzePath("test_dir", nil)
+	assert.Nil(t, err)
+
+	<-ui.done // wait for analyzer
+
+	for _, f := range ui.app.(*testapp.MockedApp).GetUpdateDraws() {
+		f()
+	}
+
+	assert.Equal(t, "test_dir", ui.currentDir.GetName())
+
+	assert.Equal(t, 1, ui.table.GetRowCount())
+
+	ui.table.Select(0, 0)
+
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRight, 'l', 0)) // into nested
+	assert.Equal(t, 3, ui.table.GetRowCount())
+
+	ui.table.Select(1, 0) // subnested
+
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'I', 0)) // ignore subnested
+
+	row, _ := ui.table.GetSelection()
+	assert.Equal(t, 2, row) // selection moves to next row
+
+	ui.table.Select(1, 0)
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'I', 0)) // unignore subnested
+}
+
 func TestEmptyFile(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -488,8 +726,51 @@ func TestEmptyFile(t *testing.T) {
 	assert.DirExists(t, "test_dir/nested/subnested")
 }
 
+func TestMarkedEmptyFile(t *testing.T) {
+	fin := testdir.CreateTestDir()
+	defer fin()
+	simScreen := testapp.CreateSimScreen()
+	defer simScreen.Fini()
+
+	app := testapp.CreateMockedApp(true)
+	ui := CreateUI(app, simScreen, &bytes.Buffer{}, false, true, false, false, false)
+	ui.done = make(chan struct{})
+	ui.askBeforeDelete = false
+	err := ui.AnalyzePath("test_dir", nil)
+	assert.Nil(t, err)
+
+	<-ui.done // wait for analyzer
+
+	for _, f := range ui.app.(*testapp.MockedApp).GetUpdateDraws() {
+		f()
+	}
+
+	assert.Equal(t, "test_dir", ui.currentDir.GetName())
+
+	assert.Equal(t, 1, ui.table.GetRowCount())
+
+	ui.table.Select(0, 0)
+
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRight, 'l', 0)) // into nested
+
+	ui.table.Select(2, 0) // file2
+
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, ' ', 0))
+
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'e', 0))
+
+	<-ui.done
+
+	for _, f := range ui.app.(*testapp.MockedApp).GetUpdateDraws() {
+		f()
+	}
+
+	assert.DirExists(t, "test_dir/nested")
+	assert.DirExists(t, "test_dir/nested/subnested")
+}
+
 func TestSortByApparentSize(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -513,7 +794,7 @@ func TestSortByApparentSize(t *testing.T) {
 }
 
 func TestShowFileCount(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -537,7 +818,7 @@ func TestShowFileCount(t *testing.T) {
 }
 
 func TestShowFileCountBW(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -561,7 +842,7 @@ func TestShowFileCountBW(t *testing.T) {
 }
 
 func TestShowMtime(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -585,7 +866,7 @@ func TestShowMtime(t *testing.T) {
 }
 
 func TestShowMtimeBW(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -609,7 +890,7 @@ func TestShowMtimeBW(t *testing.T) {
 }
 
 func TestShowRelativeBar(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -647,7 +928,7 @@ func TestRescan(t *testing.T) {
 		},
 	}
 
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -670,11 +951,11 @@ func TestRescan(t *testing.T) {
 
 	assert.Equal(t, 5, ui.table.GetRowCount())
 	assert.Contains(t, ui.table.GetCell(0, 0).Text, "/..")
-	assert.Contains(t, ui.table.GetCell(1, 0).Text, "aaa")
+	assert.Contains(t, ui.table.GetCell(1, 0).Text, "ccc")
 }
 
 func TestSorting(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -692,6 +973,11 @@ func TestSorting(t *testing.T) {
 
 	assert.Equal(t, "test_dir", ui.currentDir.GetName())
 
+	ui.table.Select(1, 0)
+	// mark the item for deletion
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, ' ', 0))
+	assert.Equal(t, 1, len(ui.markedRows))
+
 	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 's', 0))
 	assert.Equal(t, "size", ui.sortBy)
 	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'C', 0))
@@ -700,12 +986,15 @@ func TestSorting(t *testing.T) {
 	assert.Equal(t, "name", ui.sortBy)
 	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, 'M', 0))
 	assert.Equal(t, "mtime", ui.sortBy)
+
+	// marking should be dropped after sorting
+	assert.Equal(t, 0, len(ui.markedRows))
 }
 
 func TestShowFile(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)
@@ -732,7 +1021,7 @@ func TestShowFile(t *testing.T) {
 func TestShowInfoAndMoveAround(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(true)

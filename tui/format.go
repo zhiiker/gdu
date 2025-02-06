@@ -2,27 +2,46 @@ package tui
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/dundee/gdu/v5/internal/common"
 	"github.com/dundee/gdu/v5/pkg/fs"
 	"github.com/rivo/tview"
 )
 
-func (ui *UI) formatFileRow(item fs.Item, maxUsage int64, maxSize int64) string {
-	var part int
+const (
+	blackOnWhite = "[black:white:-]"
+	whiteOnBlack = "[white:black:-]"
 
-	if ui.ShowApparentSize {
-		part = int(float64(item.GetSize()) / float64(maxSize) * 10.0)
-	} else {
-		part = int(float64(item.GetUsage()) / float64(maxUsage) * 10.0)
+	defaultColor     = "[-::]"
+	defaultColorBold = "[::b]"
+)
+
+func (ui *UI) formatFileRow(item fs.Item, maxUsage, maxSize int64, marked, ignored bool) string {
+	part := 0
+	if !ignored {
+		if ui.ShowApparentSize {
+			if size := item.GetSize(); size > 0 {
+				part = int(float64(size) / float64(maxSize) * 100.0)
+			}
+		} else {
+			if usage := item.GetUsage(); usage > 0 {
+				part = int(float64(usage) / float64(maxUsage) * 100.0)
+			}
+		}
 	}
 
 	row := string(item.GetFlag())
 
-	if ui.UseColors {
-		row += "[#e67100::b]"
+	numberColor := fmt.Sprintf(
+		"[%s::b]",
+		ui.resultRow.NumberColor,
+	)
+
+	if ui.UseColors && !marked && !ignored {
+		row += numberColor
 	} else {
-		row += "[::b]"
+		row += defaultColorBold
 	}
 
 	if ui.ShowApparentSize {
@@ -31,53 +50,70 @@ func (ui *UI) formatFileRow(item fs.Item, maxUsage int64, maxSize int64) string 
 		row += fmt.Sprintf("%15s", ui.formatSize(item.GetUsage(), false, true))
 	}
 
-	row += getUsageGraph(part)
+	if ui.useOldSizeBar {
+		row += " " + getUsageGraphOld(part) + " "
+	} else {
+		row += getUsageGraph(part)
+	}
 
 	if ui.showItemCount {
-		if ui.UseColors {
-			row += "[#e67100::b]"
+		if ui.UseColors && !marked && !ignored {
+			row += numberColor
 		} else {
-			row += "[::b]"
+			row += defaultColorBold
 		}
 		row += fmt.Sprintf("%11s ", ui.formatCount(item.GetItemCount()))
 	}
 
 	if ui.showMtime {
-		if ui.UseColors {
-			row += "[#e67100::b]"
+		if ui.UseColors && !marked && !ignored {
+			row += numberColor
 		} else {
-			row += "[::b]"
+			row += defaultColorBold
 		}
 		row += fmt.Sprintf(
-			"%s [-::]",
+			"%s "+defaultColor,
 			item.GetMtime().Format("2006-01-02 15:04:05"),
 		)
 	}
 
-	if item.IsDir() {
-		if ui.UseColors {
-			row += "[#3498db::b]/"
+	if len(ui.markedRows) > 0 {
+		if marked {
+			row += string('✓')
 		} else {
-			row += "[::b]/"
+			row += " "
+		}
+		row += " "
+	}
+
+	if item.IsDir() {
+		if ui.UseColors && !marked && !ignored {
+			row += fmt.Sprintf("[%s::b]/", ui.resultRow.DirectoryColor)
+		} else {
+			row += defaultColorBold + "/"
 		}
 	}
 	row += tview.Escape(item.GetName())
 	return row
 }
 
-func (ui *UI) formatSize(size int64, reverseColor bool, transparentBg bool) string {
+func (ui *UI) formatSize(size int64, reverseColor, transparentBg bool) string {
 	var color string
 	if reverseColor {
 		if ui.UseColors {
-			color = "[black:#2479d0:-]"
+			color = fmt.Sprintf(
+				"[%s:%s:-]",
+				ui.footerTextColor,
+				ui.footerBackgroundColor,
+			)
 		} else {
-			color = "[black:white:-]"
+			color = blackOnWhite
 		}
 	} else {
 		if transparentBg {
-			color = "[-::]"
+			color = defaultColor
 		} else {
-			color = "[white:black:-]"
+			color = whiteOnBlack
 		}
 	}
 
@@ -89,8 +125,8 @@ func (ui *UI) formatSize(size int64, reverseColor bool, transparentBg bool) stri
 
 func (ui *UI) formatCount(count int) string {
 	row := ""
-	color := "[-::]"
-	count64 := int64(count)
+	color := defaultColor
+	count64 := float64(count)
 
 	switch {
 	case count64 >= common.G:
@@ -106,18 +142,20 @@ func (ui *UI) formatCount(count int) string {
 }
 
 func formatWithBinPrefix(fsize float64, color string) string {
+	asize := math.Abs(fsize)
+
 	switch {
-	case fsize >= common.Ei:
+	case asize >= common.Ei:
 		return fmt.Sprintf("%.1f%s EiB", fsize/common.Ei, color)
-	case fsize >= common.Pi:
+	case asize >= common.Pi:
 		return fmt.Sprintf("%.1f%s PiB", fsize/common.Pi, color)
-	case fsize >= common.Ti:
+	case asize >= common.Ti:
 		return fmt.Sprintf("%.1f%s TiB", fsize/common.Ti, color)
-	case fsize >= common.Gi:
+	case asize >= common.Gi:
 		return fmt.Sprintf("%.1f%s GiB", fsize/common.Gi, color)
-	case fsize >= common.Mi:
+	case asize >= common.Mi:
 		return fmt.Sprintf("%.1f%s MiB", fsize/common.Mi, color)
-	case fsize >= common.Ki:
+	case asize >= common.Ki:
 		return fmt.Sprintf("%.1f%s KiB", fsize/common.Ki, color)
 	default:
 		return fmt.Sprintf("%d%s B", int64(fsize), color)
@@ -126,19 +164,20 @@ func formatWithBinPrefix(fsize float64, color string) string {
 
 func formatWithDecPrefix(size int64, color string) string {
 	fsize := float64(size)
+	asize := math.Abs(fsize)
 	switch {
-	case size >= common.E:
-		return fmt.Sprintf("%.1f%s EB", fsize/float64(common.E), color)
-	case size >= common.P:
-		return fmt.Sprintf("%.1f%s PB", fsize/float64(common.P), color)
-	case size >= common.T:
-		return fmt.Sprintf("%.1f%s TB", fsize/float64(common.T), color)
-	case size >= common.G:
-		return fmt.Sprintf("%.1f%s GB", fsize/float64(common.G), color)
-	case size >= common.M:
-		return fmt.Sprintf("%.1f%s MB", fsize/float64(common.M), color)
-	case size >= common.K:
-		return fmt.Sprintf("%.1f%s kB", fsize/float64(common.K), color)
+	case asize >= common.E:
+		return fmt.Sprintf("%.1f%s EB", fsize/common.E, color)
+	case asize >= common.P:
+		return fmt.Sprintf("%.1f%s PB", fsize/common.P, color)
+	case asize >= common.T:
+		return fmt.Sprintf("%.1f%s TB", fsize/common.T, color)
+	case asize >= common.G:
+		return fmt.Sprintf("%.1f%s GB", fsize/common.G, color)
+	case asize >= common.M:
+		return fmt.Sprintf("%.1f%s MB", fsize/common.M, color)
+	case asize >= common.K:
+		return fmt.Sprintf("%.1f%s kB", fsize/common.K, color)
 	default:
 		return fmt.Sprintf("%d%s B", size, color)
 	}

@@ -13,7 +13,7 @@ import (
 )
 
 func TestFiltering(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
@@ -29,25 +29,31 @@ func TestFiltering(t *testing.T) {
 		f()
 	}
 
+	// mark the item for deletion
+	ui.keyPressed(tcell.NewEventKey(tcell.KeyRune, ' ', 0))
+	assert.Equal(t, 1, len(ui.markedRows))
+
 	ui.showFilterInput()
 	ui.filterValue = ""
 	ui.showDir()
 
-	assert.Contains(t, ui.table.GetCell(0, 0).Text, "aaa") // nothing is filtered
+	assert.Contains(t, ui.table.GetCell(0, 0).Text, "ccc") // nothing is filtered
+	// marking should be dropped after sorting
+	assert.Equal(t, 0, len(ui.markedRows))
 
-	ui.filterValue = "cc"
+	ui.filterValue = "aa"
 	ui.showDir()
 
-	assert.Contains(t, ui.table.GetCell(0, 0).Text, "ccc") // shows only cccc
+	assert.Contains(t, ui.table.GetCell(0, 0).Text, "aaa") // shows only cccc
 
 	ui.hideFilterInput()
 	ui.showDir()
 
-	assert.Contains(t, ui.table.GetCell(0, 0).Text, "aaa") // filtering reset
+	assert.Contains(t, ui.table.GetCell(0, 0).Text, "ccc") // filtering reset
 }
 
 func TestFilteringWithoutCurrentDir(t *testing.T) {
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
@@ -63,7 +69,7 @@ func TestFilteringWithoutCurrentDir(t *testing.T) {
 func TestSwitchToTable(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)
@@ -106,7 +112,7 @@ func TestSwitchToTable(t *testing.T) {
 func TestExitFiltering(t *testing.T) {
 	fin := testdir.CreateTestDir()
 	defer fin()
-	simScreen := testapp.CreateSimScreen(50, 50)
+	simScreen := testapp.CreateSimScreen()
 	defer simScreen.Fini()
 
 	app := testapp.CreateMockedApp(false)

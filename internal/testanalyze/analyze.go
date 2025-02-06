@@ -7,6 +7,7 @@ import (
 	"github.com/dundee/gdu/v5/internal/common"
 	"github.com/dundee/gdu/v5/pkg/analyze"
 	"github.com/dundee/gdu/v5/pkg/fs"
+	"github.com/dundee/gdu/v5/pkg/remove"
 )
 
 // MockedAnalyzer returns dir with files with different size exponents
@@ -70,17 +71,32 @@ func (a *MockedAnalyzer) GetProgressChan() chan common.CurrentProgress {
 	return make(chan common.CurrentProgress)
 }
 
-// GetDoneChan returns always Done
-func (a *MockedAnalyzer) GetDoneChan() chan struct{} {
-	c := make(chan struct{}, 1)
-	defer func() { c <- struct{}{} }()
+// GetDone returns always Done
+func (a *MockedAnalyzer) GetDone() common.SignalGroup {
+	c := make(common.SignalGroup)
+	defer c.Broadcast()
 	return c
 }
 
 // ResetProgress does nothing
 func (a *MockedAnalyzer) ResetProgress() {}
 
-// RemoveItemFromDirWithErr returns error
-func RemoveItemFromDirWithErr(dir fs.Item, file fs.Item) error {
+// SetFollowSymlinks does nothing
+func (a *MockedAnalyzer) SetFollowSymlinks(v bool) {}
+
+// ItemFromDirWithErr returns error
+func ItemFromDirWithErr(dir, file fs.Item) error {
+	return errors.New("Failed")
+}
+
+// ItemFromDirWithSleep returns error
+func ItemFromDirWithSleep(dir, file fs.Item) error {
+	time.Sleep(time.Millisecond * 600)
+	return remove.ItemFromDir(dir, file)
+}
+
+// ItemFromDirWithSleepAndErr returns error
+func ItemFromDirWithSleepAndErr(dir, file fs.Item) error {
+	time.Sleep(time.Millisecond * 600)
 	return errors.New("Failed")
 }

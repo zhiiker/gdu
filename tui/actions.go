@@ -1,25 +1,37 @@
 package tui
 
 import (
-	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 
 	"github.com/dundee/gdu/v5/build"
 	"github.com/dundee/gdu/v5/pkg/analyze"
 	"github.com/dundee/gdu/v5/pkg/device"
 	"github.com/dundee/gdu/v5/pkg/fs"
 	"github.com/dundee/gdu/v5/report"
-	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
 )
 
-const defaultLinesCount = 500
-const linesTreshold = 20
+const (
+	defaultLinesCount = 500
+	linesThreshold    = 20
+
+	actionEmpty  = "empty"
+	actionDelete = "delete"
+
+	actingEmpty  = "emptying"
+	actingDelete = "deleting"
+)
 
 // ListDevices lists mounted devices and shows their disk usage
 func (ui *UI) ListDevices(getter device.DevicesInfoGetter) error {
@@ -45,13 +57,12 @@ func (ui *UI) AnalyzePath(path string, parentDir fs.Item) error {
 	flex := tview.NewFlex().
 		AddItem(nil, 0, 1, false).
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(nil, 10, 1, false).
+			AddItem(nil, 0, 1, false).
 			AddItem(ui.progress, 8, 1, false).
-			AddItem(nil, 10, 1, false), 0, 50, false).
+			AddItem(nil, 0, 1, false), 0, 50, false).
 		AddItem(nil, 0, 1, false)
 
 	ui.pages.AddPage("progress", flex, true, true)
-	ui.table.SetSelectedFunc(ui.fileItemSelected)
 
 	go ui.updateProgress()
 
@@ -135,19 +146,52 @@ func (ui *UI) ReadAnalysis(input io.Reader) error {
 	return nil
 }
 
+// ReadFromStorage reads analysis data from persistent key-value storage
+func (ui *UI) ReadFromStorage(storagePath, path string) error {
+	storage := analyze.NewStorage(storagePath, path)
+	closeFn := storage.Open()
+	defer closeFn()
+
+	dir, err := storage.GetDirForPath(path)
+	if err != nil {
+		return err
+	}
+
+	ui.currentDir = dir
+	ui.topDirPath = ui.currentDir.GetPath()
+	ui.topDir = ui.currentDir
+
+	ui.showDir()
+	return nil
+}
+
+func (ui *UI) delete(shouldEmpty bool) {
+	if len(ui.markedRows) > 0 {
+		ui.deleteMarked(shouldEmpty)
+	} else {
+		ui.deleteSelected(shouldEmpty)
+	}
+}
+
 func (ui *UI) deleteSelected(shouldEmpty bool) {
 	row, column := ui.table.GetSelection()
 	selectedItem := ui.table.GetCell(row, column).GetReference().(fs.Item)
 
+	if ui.deleteInBackground {
+		ui.queueForDeletion([]fs.Item{selectedItem}, shouldEmpty)
+		return
+	}
+
 	var action, acting string
 	if shouldEmpty {
-		action = "empty "
-		acting = "emptying"
+		action = actionEmpty
+		acting = actingEmpty
 	} else {
-		action = "delete "
-		acting = "deleting"
+		action = actionDelete
+		acting = actingDelete
 	}
 	modal := tview.NewModal().SetText(
+		// nolint: staticcheck // Why: fixed string
 		strings.Title(acting) +
 			" " +
 			tview.Escape(selectedItem.GetName()) +
@@ -176,7 +220,7 @@ func (ui *UI) deleteSelected(shouldEmpty bool) {
 	go func() {
 		for _, item := range deleteItems {
 			if err := deleteFun(currentDir, item); err != nil {
-				msg := "Can't " + action + tview.Escape(selectedItem.GetName())
+				msg := "Can't " + action + " " + tview.Escape(selectedItem.GetName())
 				ui.app.QueueUpdateDraw(func() {
 					ui.pages.RemovePage(acting)
 					ui.showErr(msg, err)
@@ -190,103 +234,16 @@ func (ui *UI) deleteSelected(shouldEmpty bool) {
 
 		ui.app.QueueUpdateDraw(func() {
 			ui.pages.RemovePage(acting)
+			x, y := ui.table.GetOffset()
 			ui.showDir()
 			ui.table.Select(min(row, ui.table.GetRowCount()-1), 0)
+			ui.table.SetOffset(min(x, ui.table.GetRowCount()-1), y)
 		})
 
 		if ui.done != nil {
 			ui.done <- struct{}{}
 		}
 	}()
-}
-
-func (ui *UI) showFile() *tview.TextView {
-	if ui.currentDir == nil {
-		return nil
-	}
-
-	row, column := ui.table.GetSelection()
-	selectedFile := ui.table.GetCell(row, column).GetReference().(fs.Item)
-	if selectedFile.IsDir() {
-		return nil
-	}
-
-	f, err := os.Open(selectedFile.GetPath())
-	if err != nil {
-		ui.showErr("Error opening file", err)
-		return nil
-	}
-
-	totalLines := 0
-	scanner := bufio.NewScanner(f)
-
-	file := tview.NewTextView()
-	ui.currentDirLabel.SetText("[::b] --- " +
-		strings.TrimPrefix(selectedFile.GetPath(), build.RootPathPrefix) +
-		" ---").SetDynamicColors(true)
-
-	readNextPart := func(linesCount int) int {
-		var err error
-		readLines := 0
-		for scanner.Scan() && readLines <= linesCount {
-			_, err = file.Write(scanner.Bytes())
-			if err != nil {
-				ui.showErr("Error reading file", err)
-				return 0
-			}
-			_, err = file.Write([]byte("\n"))
-			if err != nil {
-				ui.showErr("Error reading file", err)
-				return 0
-			}
-			readLines++
-		}
-		return readLines
-	}
-	totalLines += readNextPart(defaultLinesCount)
-
-	file.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Rune() == 'q' || event.Key() == tcell.KeyESC {
-			err = f.Close()
-			if err != nil {
-				ui.showErr("Error closing file", err)
-				return event
-			}
-			ui.currentDirLabel.SetText("[::b] --- " +
-				strings.TrimPrefix(ui.currentDirPath, build.RootPathPrefix) +
-				" ---").SetDynamicColors(true)
-			ui.pages.RemovePage("file")
-			ui.app.SetFocus(ui.table)
-			return event
-		}
-
-		switch {
-		case event.Rune() == 'j':
-			fallthrough
-		case event.Rune() == 'G':
-			fallthrough
-		case event.Key() == tcell.KeyDown:
-			fallthrough
-		case event.Key() == tcell.KeyPgDn:
-			_, _, _, height := file.GetInnerRect()
-			row, _ := file.GetScrollOffset()
-			if height+row > totalLines-linesTreshold {
-				totalLines += readNextPart(defaultLinesCount)
-			}
-		}
-		return event
-	})
-
-	grid := tview.NewGrid().SetRows(1, 1, 0, 1).SetColumns(0)
-	grid.AddItem(ui.header, 0, 0, 1, 1, 0, 0, false).
-		AddItem(ui.currentDirLabel, 1, 0, 1, 1, 0, 0, false).
-		AddItem(file, 2, 0, 1, 1, 0, 0, true).
-		AddItem(ui.footerLabel, 3, 0, 1, 1, 0, 0, false)
-
-	ui.pages.HidePage("background")
-	ui.pages.AddPage("file", grid, true, true)
-
-	return file
 }
 
 func (ui *UI) showInfo() {
@@ -299,9 +256,12 @@ func (ui *UI) showInfo() {
 	selectedFile := ui.table.GetCell(row, column).GetReference().(fs.Item)
 
 	if ui.UseColors {
-		numberColor = "[#e67100::b]"
+		numberColor = fmt.Sprintf(
+			"[%s::b]",
+			ui.resultRow.NumberColor,
+		)
 	} else {
-		numberColor = "[::b]"
+		numberColor = defaultColorBold
 	}
 
 	linesCount := 12
@@ -346,4 +306,102 @@ func (ui *UI) showInfo() {
 		AddItem(nil, 0, 1, false)
 
 	ui.pages.AddPage("info", flex, true, true)
+}
+
+func (ui *UI) openItem() {
+	row, column := ui.table.GetSelection()
+	selectedFile, ok := ui.table.GetCell(row, column).GetReference().(fs.Item)
+	if !ok || selectedFile == ui.currentDir.GetParent() {
+		return
+	}
+
+	openBinary := "xdg-open"
+
+	switch runtime.GOOS {
+	case "darwin":
+		openBinary = "open"
+	case "windows":
+		openBinary = "explorer"
+	}
+
+	cmd := exec.Command(openBinary, selectedFile.GetPath())
+	err := cmd.Start()
+	if err != nil {
+		ui.showErr("Error opening", err)
+	}
+}
+
+func (ui *UI) confirmExport() *tview.Form {
+	form := tview.NewForm().
+		AddInputField("File name", "export.json", 30, nil, func(v string) {
+			ui.exportName = v
+		}).
+		AddButton("Export", ui.exportAnalysis).
+		SetButtonsAlign(tview.AlignCenter)
+	form.SetBorder(true).
+		SetTitle(" Export data to JSON ").
+		SetInputCapture(func(key *tcell.EventKey) *tcell.EventKey {
+			if key.Key() == tcell.KeyEsc {
+				ui.pages.RemovePage("export")
+				ui.app.SetFocus(ui.table)
+				return nil
+			}
+			return key
+		})
+	flex := modal(form, 50, 7)
+	ui.pages.AddPage("export", flex, true, true)
+	ui.app.SetFocus(form)
+	return form
+}
+
+func (ui *UI) exportAnalysis() {
+	ui.pages.RemovePage("export")
+
+	text := tview.NewTextView().SetText("Export in progress...").SetTextAlign(tview.AlignCenter)
+	text.SetBorder(true).SetTitle(" Export data to JSON ")
+	flex := modal(text, 50, 3)
+	ui.pages.AddPage("exporting", flex, true, true)
+
+	go func() {
+		var err error
+		defer ui.app.QueueUpdateDraw(func() {
+			ui.pages.RemovePage("exporting")
+			if err == nil {
+				ui.app.SetFocus(ui.table)
+			}
+		})
+		if ui.done != nil {
+			defer func() {
+				ui.done <- struct{}{}
+			}()
+		}
+
+		var buff bytes.Buffer
+
+		buff.Write([]byte(`[1,2,{"progname":"gdu","progver":"`))
+		buff.Write([]byte(build.Version))
+		buff.Write([]byte(`","timestamp":`))
+		buff.Write([]byte(strconv.FormatInt(time.Now().Unix(), 10)))
+		buff.Write([]byte("},\n"))
+
+		file, err := os.Create(ui.exportName)
+		if err != nil {
+			ui.showErrFromGo("Error creating file", err)
+			return
+		}
+
+		if err = ui.topDir.EncodeJSON(&buff, true); err != nil {
+			ui.showErrFromGo("Error encoding JSON", err)
+			return
+		}
+
+		if _, err = buff.Write([]byte("]\n")); err != nil {
+			ui.showErrFromGo("Error writing to buffer", err)
+			return
+		}
+		if _, err = buff.WriteTo(file); err != nil {
+			ui.showErrFromGo("Error writing to file", err)
+			return
+		}
+	}()
 }

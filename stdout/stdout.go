@@ -25,9 +25,15 @@ type UI struct {
 	orange    *color.Color
 	blue      *color.Color
 	summarize bool
+	noPrefix  bool
+	top       int
 }
 
-var progressRunes = []rune(`⠇⠏⠋⠙⠹⠸⠼⠴⠦⠧`)
+var (
+	progressRunes      = []rune(`⠇⠏⠋⠙⠹⠸⠼⠴⠦⠧`)
+	progressRunesOld   = []rune(`-\\|/`)
+	progressRunesCount = len(progressRunes)
+)
 
 // CreateStdoutUI creates UI for stdout
 func CreateStdoutUI(
@@ -39,6 +45,8 @@ func CreateStdoutUI(
 	summarize bool,
 	constGC bool,
 	useSIPrefix bool,
+	noPrefix bool,
+	top int,
 ) *UI {
 	ui := &UI{
 		UI: &common.UI{
@@ -52,6 +60,8 @@ func CreateStdoutUI(
 		},
 		output:    output,
 		summarize: summarize,
+		noPrefix:  noPrefix,
+		top:       top,
 	}
 
 	ui.red = color.New(color.FgRed).Add(color.Bold)
@@ -63,6 +73,11 @@ func CreateStdoutUI(
 	}
 
 	return ui
+}
+
+func (ui *UI) UseOldProgressRunes() {
+	progressRunes = progressRunesOld
+	progressRunesCount = len(progressRunes)
 }
 
 // StartUILoop stub
@@ -77,7 +92,7 @@ func (ui *UI) ListDevices(getter device.DevicesInfoGetter) error {
 		return err
 	}
 
-	maxDeviceNameLenght := maxInt(maxLength(
+	maxDeviceNameLength := maxInt(maxLength(
 		devices,
 		func(device *device.Device) string { return device.Name },
 	), len("Devices"))
@@ -93,7 +108,7 @@ func (ui *UI) ListDevices(getter device.DevicesInfoGetter) error {
 
 	lineFormat := fmt.Sprintf(
 		"%%%ds %%%ds %%%ds %%%ds %%%ds %%s\n",
-		maxDeviceNameLenght,
+		maxDeviceNameLength,
 		sizeLength,
 		sizeLength,
 		sizeLength,
@@ -102,7 +117,7 @@ func (ui *UI) ListDevices(getter device.DevicesInfoGetter) error {
 
 	fmt.Fprintf(
 		ui.output,
-		fmt.Sprintf("%%%ds %%9s %%9s %%9s %%5s %%s\n", maxDeviceNameLenght),
+		fmt.Sprintf("%%%ds %%9s %%9s %%9s %%5s %%s\n", maxDeviceNameLength),
 		"Device",
 		"Size",
 		"Used",
@@ -131,15 +146,17 @@ func (ui *UI) ListDevices(getter device.DevicesInfoGetter) error {
 // AnalyzePath analyzes recursively disk usage in given path
 func (ui *UI) AnalyzePath(path string, _ fs.Item) error {
 	var (
-		dir  fs.Item
-		wait sync.WaitGroup
+		dir             fs.Item
+		wait            sync.WaitGroup
+		updateStatsDone chan struct{}
 	)
+	updateStatsDone = make(chan struct{}, 1)
 
 	if ui.ShowProgress {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			ui.updateProgress()
+			ui.updateProgress(updateStatsDone)
 		}()
 	}
 
@@ -148,24 +165,57 @@ func (ui *UI) AnalyzePath(path string, _ fs.Item) error {
 		defer wait.Done()
 		dir = ui.Analyzer.AnalyzeDir(path, ui.CreateIgnoreFunc(), ui.ConstGC)
 		dir.UpdateStats(make(fs.HardLinkedItems, 10))
+		updateStatsDone <- struct{}{}
 	}()
 
 	wait.Wait()
 
-	if ui.summarize {
+	switch {
+	case ui.top > 0:
+		ui.printTopFiles(dir)
+	case ui.summarize:
 		ui.printTotalItem(dir)
-	} else {
+	default:
 		ui.showDir(dir)
 	}
 
 	return nil
 }
 
+// ReadFromStorage reads analysis data from persistent key-value storage
+func (ui *UI) ReadFromStorage(storagePath, path string) error {
+	storage := analyze.NewStorage(storagePath, path)
+	closeFn := storage.Open()
+	defer closeFn()
+
+	dir, err := storage.GetDirForPath(path)
+	if err != nil {
+		return err
+	}
+
+	switch {
+	case ui.top > 0:
+		ui.printTopFiles(dir)
+	case ui.summarize:
+		ui.printTotalItem(dir)
+	default:
+		ui.showDir(dir)
+	}
+	return nil
+}
+
 func (ui *UI) showDir(dir fs.Item) {
-	sort.Sort(dir.GetFiles())
+	sort.Sort(sort.Reverse(dir.GetFiles()))
 
 	for _, file := range dir.GetFiles() {
 		ui.printItem(file)
+	}
+}
+
+func (ui *UI) printTopFiles(file fs.Item) {
+	collected := analyze.CollectTopFiles(file, ui.top)
+	for _, file := range collected {
+		ui.printItemPath(file)
 	}
 }
 
@@ -212,7 +262,7 @@ func (ui *UI) printItem(file fs.Item) {
 			lineFormat,
 			string(file.GetFlag()),
 			ui.formatSize(size),
-			ui.blue.Sprintf("/"+file.GetName()))
+			ui.blue.Sprint("/"+file.GetName()))
 	} else {
 		fmt.Fprintf(ui.output,
 			lineFormat,
@@ -220,6 +270,27 @@ func (ui *UI) printItem(file fs.Item) {
 			ui.formatSize(size),
 			file.GetName())
 	}
+}
+
+func (ui *UI) printItemPath(file fs.Item) {
+	var lineFormat string
+	if ui.UseColors {
+		lineFormat = "%20s %s\n"
+	} else {
+		lineFormat = "%9s %s\n"
+	}
+
+	var size int64
+	if ui.ShowApparentSize {
+		size = file.GetSize()
+	} else {
+		size = file.GetUsage()
+	}
+
+	fmt.Fprintf(ui.output,
+		lineFormat,
+		ui.formatSize(size),
+		file.GetPath())
 }
 
 // ReadAnalysis reads analysis report from JSON file
@@ -265,7 +336,11 @@ func (ui *UI) ReadAnalysis(input io.Reader) error {
 		return err
 	}
 
-	ui.showDir(dir)
+	if ui.summarize {
+		ui.printTotalItem(dir)
+	} else {
+		ui.showDir(dir)
+	}
 
 	return nil
 }
@@ -292,18 +367,18 @@ func (ui *UI) showReadingProgress(doneChan chan struct{}) {
 
 		time.Sleep(100 * time.Millisecond)
 		i++
-		i %= 10
+		i %= progressRunesCount
 	}
 }
 
-func (ui *UI) updateProgress() {
+func (ui *UI) updateProgress(updateStatsDone <-chan struct{}) {
 	emptyRow := "\r"
 	for j := 0; j < 100; j++ {
 		emptyRow += " "
 	}
 
 	progressChan := ui.Analyzer.GetProgressChan()
-	doneChan := ui.Analyzer.GetDoneChan()
+	analysisDoneChan := ui.Analyzer.GetDone()
 
 	var progress common.CurrentProgress
 
@@ -313,9 +388,23 @@ func (ui *UI) updateProgress() {
 
 		select {
 		case progress = <-progressChan:
-		case <-doneChan:
-			fmt.Fprint(ui.output, "\r")
-			return
+		case <-analysisDoneChan:
+			for {
+				fmt.Fprint(ui.output, emptyRow)
+				fmt.Fprintf(ui.output, "\r %s ", string(progressRunes[i]))
+				fmt.Fprint(ui.output, "Calculating disk usage...")
+				time.Sleep(100 * time.Millisecond)
+				i++
+				i %= progressRunesCount
+
+				select {
+				case <-updateStatsDone:
+					fmt.Fprint(ui.output, emptyRow)
+					fmt.Fprint(ui.output, "\r")
+					return
+				default:
+				}
+			}
 		}
 
 		fmt.Fprintf(ui.output, "\r %s ", string(progressRunes[i]))
@@ -327,11 +416,14 @@ func (ui *UI) updateProgress() {
 
 		time.Sleep(100 * time.Millisecond)
 		i++
-		i %= 10
+		i %= progressRunesCount
 	}
 }
 
 func (ui *UI) formatSize(size int64) string {
+	if ui.noPrefix {
+		return ui.orange.Sprintf("%d", size)
+	}
 	if ui.UseSIPrefix {
 		return ui.formatWithDecPrefix(size)
 	}
@@ -340,19 +432,20 @@ func (ui *UI) formatSize(size int64) string {
 
 func (ui *UI) formatWithBinPrefix(size int64) string {
 	fsize := float64(size)
+	asize := math.Abs(fsize)
 
 	switch {
-	case fsize >= common.Ei:
+	case asize >= common.Ei:
 		return ui.orange.Sprintf("%.1f", fsize/common.Ei) + " EiB"
-	case fsize >= common.Pi:
+	case asize >= common.Pi:
 		return ui.orange.Sprintf("%.1f", fsize/common.Pi) + " PiB"
-	case fsize >= common.Ti:
+	case asize >= common.Ti:
 		return ui.orange.Sprintf("%.1f", fsize/common.Ti) + " TiB"
-	case fsize >= common.Gi:
+	case asize >= common.Gi:
 		return ui.orange.Sprintf("%.1f", fsize/common.Gi) + " GiB"
-	case fsize >= common.Mi:
+	case asize >= common.Mi:
 		return ui.orange.Sprintf("%.1f", fsize/common.Mi) + " MiB"
-	case fsize >= common.Ki:
+	case asize >= common.Ki:
 		return ui.orange.Sprintf("%.1f", fsize/common.Ki) + " KiB"
 	default:
 		return ui.orange.Sprintf("%d", size) + " B"
@@ -361,20 +454,21 @@ func (ui *UI) formatWithBinPrefix(size int64) string {
 
 func (ui *UI) formatWithDecPrefix(size int64) string {
 	fsize := float64(size)
+	asize := math.Abs(fsize)
 
 	switch {
-	case size >= common.E:
-		return ui.orange.Sprintf("%.1f", fsize/float64(common.E)) + " EB"
-	case size >= common.P:
-		return ui.orange.Sprintf("%.1f", fsize/float64(common.P)) + " PB"
-	case size >= common.T:
-		return ui.orange.Sprintf("%.1f", fsize/float64(common.T)) + " TB"
-	case size >= common.G:
-		return ui.orange.Sprintf("%.1f", fsize/float64(common.G)) + " GB"
-	case size >= common.M:
-		return ui.orange.Sprintf("%.1f", fsize/float64(common.M)) + " MB"
-	case size >= common.K:
-		return ui.orange.Sprintf("%.1f", fsize/float64(common.K)) + " kB"
+	case asize >= common.E:
+		return ui.orange.Sprintf("%.1f", fsize/common.E) + " EB"
+	case asize >= common.P:
+		return ui.orange.Sprintf("%.1f", fsize/common.P) + " PB"
+	case asize >= common.T:
+		return ui.orange.Sprintf("%.1f", fsize/common.T) + " TB"
+	case asize >= common.G:
+		return ui.orange.Sprintf("%.1f", fsize/common.G) + " GB"
+	case asize >= common.M:
+		return ui.orange.Sprintf("%.1f", fsize/common.M) + " MB"
+	case asize >= common.K:
+		return ui.orange.Sprintf("%.1f", fsize/common.K) + " kB"
 	default:
 		return ui.orange.Sprintf("%d", size) + " B"
 	}
@@ -392,7 +486,7 @@ func maxLength(list []*device.Device, keyGetter func(*device.Device) string) int
 	return maxLen
 }
 
-func maxInt(x int, y int) int {
+func maxInt(x, y int) int {
 	if x > y {
 		return x
 	}

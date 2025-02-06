@@ -27,14 +27,14 @@ func manageMemoryUsage(c <-chan struct{}) {
 }
 
 /*
-	Try to balance performance and memory consumption.
+Try to balance performance and memory consumption.
 
-	When less memory is used by gdu than the total free memory of the host,
-	Garbage Collection is disabled during the analysis phase at all.
+When less memory is used by gdu than the total free memory of the host,
+Garbage Collection is disabled during the analysis phase at all.
 
-	Otherwise GC is enabled.
-	The more memory is used and the less memory is free,
-	the more often will the GC happen.
+Otherwise GC is enabled.
+The more memory is used and the less memory is free,
+the more often will the GC happen.
 */
 func rebalanceGC(disabledGC *bool) {
 	memStats := runtime.MemStats{}
@@ -51,7 +51,7 @@ func rebalanceGC(disabledGC *bool) {
 			*disabledGC = true
 		}
 	} else {
-		// the more memory we use and the less memory is free, the more aggresive the GC will be
+		// the more memory we use and the less memory is free, the more aggressive the GC will be
 		gcPercent := int(100 / float64(memStats.Alloc) * float64(free))
 		log.Printf(
 			"setting GC percent to %d, alloc: %d, free: %d",

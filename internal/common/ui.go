@@ -19,10 +19,20 @@ type UI struct {
 	ConstGC               bool
 }
 
+// SetAnalyzer sets analyzer instance
+func (ui *UI) SetAnalyzer(a Analyzer) {
+	ui.Analyzer = a
+}
+
+// SetFollowSymlinks sets whether symlinks to files should be followed
+func (ui *UI) SetFollowSymlinks(v bool) {
+	ui.Analyzer.SetFollowSymlinks(v)
+}
+
 // binary multiplies prefixes (IEC)
 const (
-	_          = iota
-	Ki float64 = 1 << (10 * iota)
+	_ float64 = 1 << (10 * iota)
+	Ki
 	Mi
 	Gi
 	Ti
@@ -32,12 +42,12 @@ const (
 
 // SI prefixes
 const (
-	K int64 = 1e3
-	M int64 = 1e6
-	G int64 = 1e9
-	T int64 = 1e12
-	P int64 = 1e15
-	E int64 = 1e18
+	K float64 = 1e3
+	M float64 = 1e6
+	G float64 = 1e9
+	T float64 = 1e12
+	P float64 = 1e15
+	E float64 = 1e18
 )
 
 // FormatNumber returns number as a string with thousands separator
